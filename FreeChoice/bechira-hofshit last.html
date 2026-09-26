@@ -1162,12 +1162,19 @@ function musicResume(){
 }
 /* טעינה מוקדמת ברקע: שירי הניצחון ואנימציות הניצחון של המפלגות שמשחקות עכשיו,
    כדי שמסך הניצחון יופיע מיד — בלי להעמיס בזמן הטעינה הראשונה של המשחק */
-const _pre=[], _preDone=new Set();
+const _pre=[], _preDone=new Set(), _preVid={};
+function stopWinVideos(){ Object.values(_preVid).forEach(v=>{ try{ v.pause(); }catch(e){} }); }
+function winVideoEl(url){                          // נגן הווידאו של מסך הניצחון — אחד לכל סרטון, משותף לטעינה המוקדמת ולתצוגה
+  let v=_preVid[url];
+  if(!v){ v=document.createElement('video'); v.muted=true; v.defaultMuted=true; v.playsInline=true;
+    v.setAttribute('playsinline',''); v.setAttribute('muted',''); v.loop=true; v.preload='auto'; v.src=url; _preVid[url]=v; }
+  return v;
+}
 function preloadForGame(){
   (G.players||[]).forEach(p=>{
     const P=p.party; if(!P||_preDone.has(P.id)) return; _preDone.add(P.id);
     if(P.anim){ const im=new Image(); im.decoding='async'; im.src=P.anim(); _pre.push(im); }
-    if(P.video){ const v=document.createElement('video'); v.muted=true; v.preload='auto'; v.src=P.video(); _pre.push(v); }
+    if(P.video) winVideoEl(P.video());
     if(P.song) musicEl('win-'+P.id, P.song());
   });
 }
@@ -3046,9 +3053,7 @@ function playVictory(p, noVideo){
   const P=p.party, m=$('#movie');
   if((P.anim||P.video) && !noVideo){           // אנימציית ניצחון — תמונה מונפשת או סרטון מושתק בלולאה
     clearInterval(m._t);
-    const media = P.video
-      ? `<video class="winvid main" muted playsinline autoplay loop preload="auto" src="${P.video()}"></video>`
-      : `<img class="winvid main" alt="" src="${P.anim()}">`;
+    const media = P.video ? '' : `<img class="winvid main" alt="" src="${P.anim()}">`;
     m.innerHTML=`<div id="fireworks"></div><img class="winvid poster" alt="" src="${P.poster||''}">
       ${media}
       <div class="wincenter">
@@ -3056,14 +3061,20 @@ function playVictory(p, noVideo){
           <span>${P.name} הרכיבה ממשלה!</span></div>
         <div class="wincap" id="cap">${P.lines[0]}</div>
       </div>`;
-    const im=m.querySelector('.winvid.main');
     const dropPoster=()=>{ const p0=m.querySelector('img.winvid.poster'); if(p0) p0.remove(); };
+    let im;
     if(P.video){
-      im.muted=true;                                // הסאונד של הסרטון כבוי — שומעים את שיר המפלגה
-      im.addEventListener('playing', dropPoster, {once:true});
-      im.addEventListener('error', ()=>im.remove()); // דפדפן שלא מנגן את הסרטון — נשארת תמונת הפוסטר
-      const pr=im.play(); if(pr&&pr.catch) pr.catch(()=>{});
+      // אותו נגן שכבר טען את הסרטון ברקע — בלי הורדה כפולה (שתי הורדות של אותו קובץ נתקעות)
+      im=winVideoEl(P.video()); im.className='winvid main'; im.muted=true;   // מושתק — שומעים את שיר המפלגה
+      try{ im.currentTime=0; }catch(e){}
+      const p0=m.querySelector('img.winvid.poster'); if(p0) p0.after(im); else m.prepend(im);
+      im.onplaying=dropPoster;
+      im.onerror=()=>im.remove();                   // דפדפן שלא מנגן את הסרטון — נשארת תמונת הפוסטר
+      // אם הדפדפן חסם הפעלה אוטומטית (למשל מצב חיסכון בסוללה) — מנסים שוב במגע הראשון במסך
+      const pr=im.play(); if(pr&&pr.catch) pr.catch(()=>{
+        m.addEventListener('pointerdown', ()=>{ const r=im.play(); if(r&&r.catch) r.catch(()=>{}); }, {once:true}); });
     } else {
+      im=m.querySelector('.winvid.main');
       im.addEventListener('load', dropPoster);
       im.addEventListener('error', ()=>drawnVictory(p));
     }
@@ -3100,7 +3111,7 @@ function playVictory(p, noVideo){
   startFireworks();
   show('#s-win');
 }
-$('#again').onclick=()=>{ G._champParty=null; stopFireworks(); clearInterval(tick); G.running=false; clearInterval($('#movie')._t); G.players=[]; G.act=[]; selChars=[]; buildChars(); show('#s-title'); };
+$('#again').onclick=()=>{ G._champParty=null; stopFireworks(); stopWinVideos(); clearInterval(tick); G.running=false; clearInterval($('#movie')._t); G.players=[]; G.act=[]; selChars=[]; buildChars(); show('#s-title'); };
 
 /* ============================ EXIT ============================ */
 function quitToMenu(){
@@ -3112,7 +3123,7 @@ function quitToMenu(){
   arena.querySelectorAll('.zone,.aimline,.ghost,.band,.pad,.stack,.hand,.hud,.weapdock,.flyer,.shot,.pop,.trail,.burst').forEach(el=>el.remove());
   $('#confirm').classList.remove('on');
   $('#go').className='';
-  const m=$('#movie'); if(m._t) clearInterval(m._t); stopFireworks(); G._champParty=null;
+  const m=$('#movie'); if(m._t) clearInterval(m._t); stopFireworks(); stopWinVideos(); G._champParty=null;
   selChars=[]; buildChars();
   show('#s-title');
 }
