@@ -433,7 +433,9 @@ html.desk .wbtn .wkey{display:flex}
 .beamdot{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;z-index:48;display:none;
   background:radial-gradient(circle,#fff 0%,var(--c) 70%);box-shadow:0 0 14px var(--c)}
 .beamdot.hot{animation:dothot .35s ease-in-out infinite}
-@keyframes dothot{50%{transform:scale(1.45)}}
+@keyframes dothot{50%{transform:scale(1.45)}}  /* המיקום של הנקודה ב-translate נפרד — הפעימה לא מזיזה אותה */
+.beam{will-change:transform}
+.beamdot{will-change:translate,transform}
 .band{position:absolute;height:0;border-top:4px dashed rgba(0,0,0,.55);transform-origin:0 50%;display:none;z-index:47;pointer-events:none}
 .aimline{position:absolute;height:5px;transform-origin:0 50%;display:none;z-index:47;border-radius:3px;opacity:.85;pointer-events:none}
 .ghost .deg{display:block;font-size:12px;font-weight:900;color:#111;background:rgba(255,255,255,.85);border-radius:6px;padding:0 4px;margin-top:-4px;text-align:center}
@@ -2501,7 +2503,10 @@ function beamEls(p,n){
   }
   return p._beams;
 }
-function hideBeams(p){ (p._beams||[]).forEach(b=>{ b.line.style.display='none'; b.dot.style.display='none'; }); }
+function hideBeams(p){
+  (p._beamAnims||[]).forEach(a=>a.cancel()); p._beamAnims=[];
+  (p._beams||[]).forEach(b=>{ b.line.style.display='none'; b.dot.style.display='none'; });
+}
 function chargeT(p){ return (performance.now()-p._chargeT0)/CHARGE_MS; }
 /* ===== צלילי נשק (מסונתזים, בלי קבצים) =====
    טעינה: טון שעולה עד רגע השחרור האידיאלי · שחרור: "וווש" · פגיעה ישירה: פיצוץ · אחרת: "פפפ" חלש */
@@ -2638,20 +2643,48 @@ function startCharge(p){
   const ef=list.map(f=>edgeFactor(o,stackCenter(f),r)), maxEF=Math.max(1.05,...ef);
   p._cl=list; p._ef=ef;
   p._chargeT0=performance.now(); p._charging=true; chargeSnd(p,maxEF);
+  // הגאומטריה נמדדת פעם אחת (החפיסות לא זזות בזמן הטעינה). בכל פריים משנים רק transform —
+  // זה רץ על כרטיס המסך, בלי חישוב מחדש של פריסת העמוד, ולכן התנועה חלקה
+  const geo=list.map((f,i)=>{
+    const c=stackCenter(f), dx=c.x-o.x, dy=c.y-o.y, len=Math.hypot(dx,dy), ang=Math.atan2(dy,dx)*180/Math.PI;
+    const {line,dot}=els[i];
+    line.classList.remove('hot'); dot.classList.remove('hot');
+    line.style.left=(o.x-r.left)+'px'; line.style.top=(o.y-r.top)+'px';
+    line.style.width=(len*ef[i])+'px';                            // האורך המלא עד קצה המסך; מוצג חלק ממנו ב-scaleX
+    line.style.transform=`rotate(${ang}deg) scaleX(0)`;
+    dot.style.left=(o.x-r.left)+'px'; dot.style.top=(o.y-r.top)+'px';
+    dot.style.translate='0px 0px';
+    line.style.display='block'; dot.style.display='block';
+    return {line,dot,dx,dy,ang,ef:ef[i]};
+  });
+  // הקרן מתארכת בקצב קבוע — אנימציה אחת שהדפדפן מריץ לבד על כרטיס המסך, בלי קוד בכל פריים
+  (p._beamAnims||[]).forEach(a=>a.cancel());
+  p._beamAnims=[];
+  if(geo.length && geo[0].line.animate){
+    for(const g of geo){
+      const opt={duration:CHARGE_MS*g.ef, easing:'linear', fill:'forwards'};
+      p._beamAnims.push(
+        g.line.animate([{transform:`rotate(${g.ang}deg) scaleX(0)`},{transform:`rotate(${g.ang}deg) scaleX(1)`}],opt),
+        g.dot.animate([{translate:'0px 0px'},{translate:`${g.dx*g.ef}px ${g.dy*g.ef}px`}],opt));
+    }
+    // מסנכרנים לשעון של הטעינה — כדי שמה שרואים יתאים בדיוק לרגע השחרור שנמדד
+    p._beamAnims.forEach(a=>{ try{ a.startTime=p._chargeT0; }catch(e){} });
+  }
+  const animated=p._beamAnims.length>0;
+  let wasHot=false;
   const tick=()=>{
     if(!p._charging) return;
     const t=chargeT(p), hot=Math.abs(t-1)<=0.12;
     if(t>=maxEF){ releaseCharge(p); renderWeapons(p); return; }   // הגיעה לקצה המסך — הירייה נגמרת שם
-    list.forEach((f,i)=>{
-      const c=stackCenter(f), dx=c.x-o.x, dy=c.y-o.y;
-      const len=Math.hypot(dx,dy), ang=Math.atan2(dy,dx)*180/Math.PI;
-      const {line,dot}=els[i], s2=Math.min(t,ef[i]);
-      line.style.display='block'; dot.style.display='block';
-      line.classList.toggle('hot',hot); dot.classList.toggle('hot',hot);
-      line.style.left=(o.x-r.left)+'px'; line.style.top=(o.y-r.top)+'px';
-      line.style.width=(len*s2)+'px'; line.style.transform=`rotate(${ang}deg)`;
-      dot.style.left=(o.x-r.left+dx*s2)+'px'; dot.style.top=(o.y-r.top+dy*s2)+'px';
-    });
+    for(const g of geo){
+      if(!animated){                              // דפדפן ישן בלי Web Animations — מעדכנים ידנית
+        const s2=Math.min(t,g.ef);
+        g.line.style.transform=`rotate(${g.ang}deg) scaleX(${s2/g.ef})`;
+        g.dot.style.translate=`${g.dx*s2}px ${g.dy*s2}px`;
+      }
+      if(hot!==wasHot){ g.line.classList.toggle('hot',hot); g.dot.classList.toggle('hot',hot); }
+    }
+    wasHot=hot;
     if(hot && !p._hotBeep){ p._hotBeep=true; beep(980,.05,.05); }
     if(!hot) p._hotBeep=false;
     p._raf=requestAnimationFrame(tick);
