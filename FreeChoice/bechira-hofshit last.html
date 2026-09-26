@@ -1160,6 +1160,19 @@ function musicResume(){
   if(musicOff || !MUS.paused || !MUS.tag) return;
   musicStartAt(MUS.offset);
 }
+/* "חימום" קובץ מדיה: מורידים אותו במלואו לזיכרון ומנגנים ממנו (blob) — כך הוא מתחיל מיד.
+   דפדפנים בטאבלט/טלפון מתעלמים מ-preload של אודיו ווידאו ומורידים רק ברגע הניגון, וזה יוצר דיליי.
+   מקובץ מקומי (file://) אין צורך — הקובץ כבר על המחשב. */
+function warmMedia(el,url){
+  if(!el || el._warm) return; el._warm=true;
+  if(!/^https?:$/.test(location.protocol)) return;          // קובץ מקומי — כבר על המחשב, אין מה לחמם
+  fetch(url).then(r=>r.ok?r.blob():Promise.reject()).then(bl=>{
+    if(!el.paused || el===MUS.cur) return;        // כבר בשימוש (מתנגן או מושהה) — לא מחליפים באמצע
+    el.src=URL.createObjectURL(bl); try{ el.load(); }catch(e){}
+  }).catch(()=>{});
+}
+function warmAudio(tag,url){ warmMedia(musicEl(tag,url),url); }
+
 /* טעינה מוקדמת ברקע: שירי הניצחון ואנימציות הניצחון של המפלגות שמשחקות עכשיו,
    כדי שמסך הניצחון יופיע מיד — בלי להעמיס בזמן הטעינה הראשונה של המשחק */
 const _pre=[], _preDone=new Set(), _preVid={};
@@ -1174,8 +1187,8 @@ function preloadForGame(){
   (G.players||[]).forEach(p=>{
     const P=p.party; if(!P||_preDone.has(P.id)) return; _preDone.add(P.id);
     if(P.anim){ const im=new Image(); im.decoding='async'; im.src=P.anim(); _pre.push(im); }
-    if(P.video) winVideoEl(P.video());
-    if(P.song) musicEl('win-'+P.id, P.song());
+    if(P.video) warmMedia(winVideoEl(P.video()), P.video());
+    if(P.song) warmAudio('win-'+P.id, P.song());
   });
 }
 function musicSync(){ if(!MUS.paused) musicForScreen(); }
@@ -3169,6 +3182,7 @@ if(window.visualViewport) window.visualViewport.addEventListener('resize', layou
 <script>document.documentElement.classList.add('ready');
 // מנסים להפעיל את מנגינת הפתיחה מיד בעליית המשחק. אם הדפדפן חוסם צליל לפני מגע ראשון —
 // הכפתור מסומן, והמוזיקה מתחילה בלחיצה/מקש הראשונים
-try{ musicForScreen(); }catch(e){}</script>
+try{ musicForScreen(); }catch(e){}
+setTimeout(()=>{ try{ warmAudio('game',GAME_MUSIC); }catch(e){} },2500);   // מוזיקת המשחק — מוכנה מראש</script>
 </body>
 </html>
