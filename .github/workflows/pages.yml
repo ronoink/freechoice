@@ -28,6 +28,7 @@ jobs:
         run: |
           mkdir -p _site
           cp "FreeChoice/bechira-hofshit last.html" _site/index.html
+          cp -r FreeChoice/assets _site/assets     # אנימציות ושירים — נטענים לפי הצורך
           echo "${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}" > _site/version.txt
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
