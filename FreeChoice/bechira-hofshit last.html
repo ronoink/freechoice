@@ -3142,6 +3142,9 @@ layoutTitleBg();
 window.addEventListener('resize', layoutTitleBg);
 if(window.visualViewport) window.visualViewport.addEventListener('resize', layoutTitleBg);
 </script>
-<script>document.documentElement.classList.add('ready');</script>
+<script>document.documentElement.classList.add('ready');
+// מנסים להפעיל את מנגינת הפתיחה מיד בעליית המשחק. אם הדפדפן חוסם צליל לפני מגע ראשון —
+// הכפתור מסומן, והמוזיקה מתחילה בלחיצה/מקש הראשונים
+try{ musicForScreen(); }catch(e){}</script>
 </body>
 </html>
