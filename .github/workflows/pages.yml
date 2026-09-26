@@ -1,0 +1,37 @@
+# מפרסם את המשחק ל-GitHub Pages בכל דחיפה — גם מענפים של סשנים (claude/*)
+# הכתובת: https://ronoink.github.io/freechoice/  (תמיד הגרסה האחרונה שנדחפה)
+name: Deploy game to Pages
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build site
+        run: |
+          mkdir -p _site
+          cp "FreeChoice/bechira-hofshit last.html" _site/index.html
+          echo "${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}" > _site/version.txt
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
